@@ -1,0 +1,41 @@
+name: Offline AutoGPT spinner checks
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  offline-spinner:
+    name: Run offline spinner tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Run existing spinner tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace=$(mktemp -d)
+          trap 'rm -rf "$workspace"' EXIT
+          mkdir -p "$workspace/autogpt/app"
+          git show HEAD:autogpt/autogpt/app/spinner.py > "$workspace/autogpt/app/spinner.py"
+          git show HEAD:autogpt/tests/unit/test_spinner.py > "$workspace/test_spinner.py"
+          cd "$workspace"
+          env -u PYTHONPATH -u PYTHONOPTIMIZE python3 -B -S - <<'PY'
+          from unittest import FunctionTestCase, TestSuite, TextTestRunner
+          import test_spinner
+
+          names = sorted(name for name in vars(test_spinner) if name.startswith("test_"))
+          if not names:
+              raise SystemExit("No spinner tests discovered")
+          suite = TestSuite(FunctionTestCase(getattr(test_spinner, name)) for name in names)
+          raise SystemExit(not TextTestRunner(verbosity=2).run(suite).wasSuccessful())
+          PY
